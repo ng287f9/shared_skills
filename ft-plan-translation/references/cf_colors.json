@@ -1,0 +1,37 @@
+{
+ "_comment": "Static activity-text -> conditional-format colour table, baked from the workbook's CF rules by dump_cf_colors.py. 'fill' is a ready-to-use <patternFill> (preserves theme/tint and indexed fills); 'font' is ARGB (8 hex) or null. Regenerate only when the workbook's conditional formatting changes.",
+ "map": {
+  "Engine Run Test": {
+   "fill": "<patternFill patternType=\"solid\"><fgColor rgb=\"FFFFC000\"/><bgColor indexed=\"64\"/></patternFill>",
+   "font": null
+  },
+  "Flight Test": {
+   "fill": "<patternFill patternType=\"solid\"><fgColor rgb=\"FFFFC000\"/><bgColor indexed=\"64\"/></patternFill>",
+   "font": null
+  },
+  "Maintenance": {
+   "fill": "<patternFill patternType=\"solid\"><fgColor rgb=\"FFD071FF\"/><bgColor indexed=\"64\"/></patternFill>",
+   "font": null
+  },
+  "Paperwork": {
+   "fill": "<patternFill patternType=\"solid\"><fgColor rgb=\"FF00B0F0\"/><bgColor indexed=\"64\"/></patternFill>",
+   "font": null
+  },
+  "Select Activity": {
+   "fill": "<patternFill patternType=\"solid\"><fgColor theme=\"0\" tint=\"-0.24994659260841701\"/><bgColor indexed=\"64\"/></patternFill>",
+   "font": "FFFF0000"
+  },
+  "Taxi Test": {
+   "fill": "<patternFill patternType=\"solid\"><fgColor rgb=\"FFFFC000\"/><bgColor indexed=\"64\"/></patternFill>",
+   "font": null
+  },
+  "Troubleshooting": {
+   "fill": "<patternFill patternType=\"solid\"><fgColor rgb=\"FFD071FF\"/><bgColor indexed=\"64\"/></patternFill>",
+   "font": null
+  },
+  "WOT Implementation": {
+   "fill": "<patternFill patternType=\"solid\"><fgColor rgb=\"FFD071FF\"/><bgColor indexed=\"64\"/></patternFill>",
+   "font": null
+  }
+ }
+}
