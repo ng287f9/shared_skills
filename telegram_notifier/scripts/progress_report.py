@@ -109,8 +109,7 @@ def send(msg: str, chat_id: str, token: str, silent: bool):
     env['PYTHONUTF8'] = '1'
     env['HTTP_PROXY'] = env.get('HTTP_PROXY', 'http://127.0.0.1:10809')
     env['HTTPS_PROXY'] = env.get('HTTPS_PROXY', 'http://127.0.0.1:10809')
-    cmd = [sys.executable, SEND, '-m', msg, '--parse-mode', 'MarkdownV2',
-           '--chat-id', chat_id]
+    cmd = [sys.executable, SEND, '-m', msg, '--chat-id', chat_id]
     if token:
         cmd += ['--token', token]
     if silent:
