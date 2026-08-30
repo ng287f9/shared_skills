@@ -1,0 +1,25 @@
+{
+  "name": "computer-use",
+  "version": "0.5.13",
+  "description": "Computer Use: automate desktop apps with mouse, keyboard, and UI element control.",
+  "author": {
+    "name": "Z.ai"
+  },
+  "license": "MIT",
+  "skills": "skills",
+  "mcpServers": {
+    "computer-use": {
+      "command": "C:\\Program Files\\ZCode\\ZCode.exe",
+      "timeoutMs": 90000,
+      "args": [
+        "C:\\Program Files\\ZCode\\resources\\glm\\zcode.cjs",
+        "__zcode-plugin-host",
+        "C:\\Users\\glenn\\.zcode\\cli\\plugins\\cache\\zcode-plugins-official\\computer-use\\0.5.13\\dist\\mcp\\server.js"
+      ],
+      "env": {
+        "ELECTRON_RUN_AS_NODE": "1",
+        "ZCODE_PLUGIN_ID": "computer-use@zcode-plugins-official"
+      }
+    }
+  }
+}

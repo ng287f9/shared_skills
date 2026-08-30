@@ -1,0 +1,8 @@
+{
+  "hash": "6ccde142514edd900e85e3234e43edc8b89d7a2198167bc94d17b1343249aae5",
+  "marketplace": "zcode-plugins-official",
+  "plugin": "restore-legacy-sessions",
+  "pluginVersion": "0.1.0",
+  "source": "filesystem",
+  "version": 1
+}
