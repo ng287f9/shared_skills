@@ -1,200 +1,181 @@
 # Script Usage Guide — Weekly Report Translation
 
-Concrete, copy-pasteable workflow for producing a CW-week bilingual deck. This is the *practical* counterpart to `../SKILL.md` — read that first for the conventions, use this for the exact commands. Verified on CW28–CW31 runs.
+Concrete workflow for producing a CW-week bilingual deck. Practical companion to
+`../SKILL.md` — read that first. Verified on CW28–CW31 (macOS/container) and
+CW36 (Windows). **Windows is now the primary environment** (PowerShell,
+PowerPoint COM, tesseract at `C:\Program Files\Tesseract-OCR`).
 
-**The general scripts in this folder are templates.** Each week you make two CW-week copies (`translate_text_slides_cw<NN>.py`, `rebuild_flight_test_progress_cw<NN>.py`), edit in the week's content, and run the 3-phase pipeline. Keep the CW-week scripts and the work dir for next week — the user wants them preserved.
+The general scripts in this folder are templates. Each week you make CW-week
+copies (`translate_text_slides_cw<NN>.py`, `rebuild_flight_test_progress_cw<NN>.py`,
+`build_plan_tables_cw<NN>.py` — copy `build_plan_tables.py` into the work dir),
+edit in the week's content, and run the 4-phase pipeline. Keep the CW-week
+scripts and the work dir for next week.
 
 ---
 
-## 0. Prerequisites & environment
+## 0. Prerequisites & environment (Windows)
 
-- Python 3.9+, with `lxml`, `python-pptx`, `Pillow`.
-- `tesseract` for screenshot OCR (grid detection + per-cell OCR). *macOS note:* tesseract fails on absolute `/tmp/...` paths with `Image file ... cannot be read!` — always write temp crops to a **local relative dir** (e.g. `ocr_tmp/`) and pass relative paths.
-- LibreOffice for rendering is **not present** on this machine; visual QA via rendering is unavailable. Fall back to the structural/analytical QA in Phase 4.
-- PowerPoint exists but its AppleScript PDF/PNG export blocks on a Save dialog — don't rely on it.
+- Python 3.9+ with `lxml`, `python-pptx`, `Pillow`; `tesseract` on PATH.
+- PowerPoint installed → visual QA via COM export (no LibreOffice).
+- **File lock**: if the deck is open in PowerPoint, `python-pptx` fails with
+  `PackageNotFoundError` / Errno 13. Do NOT kill PowerPoint. Attach and save a copy:
 
-## 1. Setup — unpack source & template
+  ```powershell
+  $pp = [Runtime.InteropServices.Marshal]::GetActiveObject('PowerPoint.Application')
+  foreach ($p in $pp.Presentations) { if ($p.Name -eq 'weekly report cw 36_CH_EN.pptx') {
+      $p.SaveCopyAs((Join-Path (Resolve-Path '.').Path 'input_current.pptx')) } }
+  ```
+
+  This also captures any unsaved manual edits in the open window.
+
+## 1. Setup — unpack source
 
 ```bash
 cd <working-dir>                       # e.g. .../ppt-translation
-mkdir -p _cw<NN>_work/source _cw<NN>_work/template
+mkdir -p _cw<NN>_work/source
 cp "weekly report cw <NN>.pptx" _cw<NN>_work/source/src.pptx
 cd _cw<NN>_work/source && unzip -o -q src.pptx
-cp ~/.claude/skills/DSG_weekly_report_translation/references/template.pptx ../template/template.pptx
-cd ../template && unzip -o -q template.pptx
+cp "C:/Users/glenn/.agents/skills/DSG_weekly_report_translation/scripts/"*.py ../   # OCR helpers
 ```
 
-Inspect slide structure so you know what you're translating:
+Inspect structure (shapes/paragraphs/geometry) with the python-pptx / lxml
+snippets below before writing the week's scripts.
 
 ```bash
-# text dump of every slide (shapes + paragraphs)
-python3 - <<'EOF'
+# text dump of every slide
+python - <<'EOF'
 from pptx import Presentation
-prs = Presentation("src.pptx")
+prs = Presentation("source/src.pptx")
 for i, s in enumerate(prs.slides, 1):
     print(f"--- SLIDE {i} ---")
     for sh in s.shapes:
         if sh.has_text_frame and sh.text_frame.text.strip():
-            print(f"  [{sh.name}] {sh.text_frame.text[:120]}")
+            print(f"  [{sh.name}] {sh.text_frame.text[:120]!r}")
         elif sh.shape_type == 13:
-            print(f"  [PIC] {sh.image.filename}")
-        elif sh.has_table:
-            print(f"  [TABLE]")
-EOF
-```
-
-Useful introspection snippets (paragraph indices, `marL`/`indent`, run sizes, colors):
-
-```bash
-python3 - <<'EOF'
-from lxml import etree
-A='{http://schemas.openxmlformats.org/drawingml/2006/main}'
-P='{http://schemas.openxmlformats.org/presentationml/2006/main}'
-tree=etree.parse("ppt/slides/slide3.xml")
-for sp in tree.iter(P+'sp'):
-    tb=sp.find(P+'txBody')
-    if tb is None: continue
-    for i,p in enumerate(tb.findall(A+'p')):
-        pPr=p.find(A+'pPr')
-        attrs={}
-        if pPr is not None:
-            attrs['marL']=pPr.get('marL'); attrs['indent']=pPr.get('indent')
-        txt=''.join((t.text or '') for t in p.iter(A+'t'))
-        if txt.strip(): print(i, attrs, txt[:60])
+            from pptx.util import Emu
+            print(f"  [PIC {sh.name}] x={Emu(sh.left).inches:.2f} y={Emu(sh.top).inches:.2f} w={Emu(sh.width).inches:.2f} h={Emu(sh.height).inches:.2f}")
 EOF
 ```
 
 ## 2. Phase 1 — text slides (TOC, Highlights/Lowlights, Status)
 
-1. Copy the template: `cp scripts/translate_text_slides.py scripts/translate_text_slides_cw<NN>.py` (or reuse the previous week's CW script).
-2. Edit the per-week data blocks in the script:
-   - **Slide 2 TOC** `toc_cn` dict — one entry per TOC line.
-   - **Slide 3**: section-header CN (`亮点` / `不足`), and the `bullets` list `(paragraph_index, marL, cn_text)`. `marL` = EN paragraph's `marL + indent` (text start). Indices are **relative to the original paragraph list**; the script inserts in reverse order so earlier indices stay valid.
-   - **Slide 4**: `bullets4` list. **Indices are relative to the post-empty-removal list** (empties removed first). Compute from the slide dump.
-   - Callout boxes (Rectangle 7 / Rectangle 4) get inline CN runs (sz=1000).
-3. Run:
-   ```bash
-   python3 translate_text_slides_cw<NN>.py source/src.pptx phase1.pptx
+Copy last week's CW script (or `translate_text_slides.py`), edit the week's data:
+
+- **Slide 2 TOC** `toc_cn`: now `(cn_text, sz)` tuples — default sz `1400`
+  (1600 clips behind the team photo on the longest line; `1200` fallback).
+- **Slide 3**: `bullets` = `(paragraph_index, marL, cn)`; remove trailing empty
+  paragraphs; `tighten(body3, aggressive=True)` (lnSpc→100%, spc→0).
+- **Slide 4**: `bullets4` indices relative to post-empty-removal list;
+  Rectangle 4 → appended CN paragraph sz=1000 `5F6F82` centered **and** y moved
+  to ~4.85in if bullets would run under it.
+- ⚠️ **All inline CN runs must be inserted BEFORE `<a:endParaRPr>`**
+  (`append_run()` helper). Runs after endParaRPr are silently dropped by
+  PowerPoint — this bit CW36 ("Lowlights不足"/banner CN vanished).
+- Footer & section labels stay English-only.
+
+```bash
+python translate_text_slides_cw<NN>.py source/src.pptx phase1.pptx
+```
+
+## 3. Phase 2 — Flight Test Program Progress (slide 5)
+
+Formatting source of truth: `../references/template_slide5_spec.md` (the
+template reference slide is no longer inserted into outputs — CW36 decision).
+
+```bash
+python grid_detect.py source/ppt/media/<img>.png     # grid lines
+python cell_ocr.py <img>.png "[rows]" "[cols]"       # per-cell OCR
+# color sampling: PIL Counter on cell crops (see spec file palette)
+```
+
+Adapt `rebuild_flight_test_progress.py` → `rebuild_flight_test_progress_cw<NN>.py`;
+validate OCR arithmetic (hours/percent/counts). Run:
+
+```bash
+python rebuild_flight_test_progress_cw<NN>.py phase1.pptx phase2.pptx
+```
+
+After rebuild: slide 5 must have 4 tables, 0 pictures; remove orphan "Oval 2"
+highlight `<p:sp>` if present.
+
+## 4. Phase 3 — Short Term Flight Test Plan (slides 6-7 of source)
+
+Full spec: `../references/short_term_plan_tables.md`. Working example:
+`build_plan_tables.py` (CW36). Steps:
+
+1. Map pictures via `ppt/slides/_rels/slideN.xml.rels` → `image*.emf`.
+   Two per slide: **banner strip** (~0.98in tall, KEEP) and **table** (≥2in
+   tall, REPLACE). Distinguish by height.
+2. EMF → 4x PNG:
+
+   ```powershell
+   powershell -File "C:/Users/glenn/.agents/skills/DSG_weekly_report_translation/scripts/emf_to_png.ps1" source/ppt/media/image10.emf emf
    ```
-4. Verify: dump slide 2/3/4 and confirm every EN line has its CN below/beside it.
 
-**⚠️ Convention gotchas (match the approved output, not the template docs alone):**
-- **Footer** ("Program risks are outlined…") stays **English-only**. The bundled `translate_text_slides.py` appends footer CN *inside* the EN `<a:r>` (malformed nested run) — do NOT use that block. Delete it in your CW script.
-- Slide-3 section headers **do** get inline CN (`Highlights 亮点` / `Lowlights 不足`), inserted *between* the "Highlights" run and the trailing-tabs run.
-- Slide-4 section labels (`SN1002:`, `SN1003:`, `SN1004:`, `Status:`) stay English-only.
-- Rectangle 7 → inline CN per line; Rectangle 4 → CN as a **separate centered paragraph** (sz=1000, grey `5F6F82`) under the EN lines.
+3. Grid-detect (relax threshold for light-grey verticals), per-cell OCR +
+   fill/font-color sampling. **Italic red/blue lines misOCR** — verify by
+   viewing 4x crops (slice into ~2500px chunks for reading). Trust the IMAGE
+   over the live Excel workbook (paste may predate edits).
+4. Adapt `build_plan_tables.py` data blocks (rows/cols/colors per week) and run:
+   `python build_plan_tables_cw<NN>.py <in.pptx> <out.pptx>` — it does pass A
+   (tables on the plan slides), slide-clone (split), pass B (week-2 table).
+5. Multi-week image ⇒ one slide per week; clone rels must DROP the
+   notesSlide relationship; register slide in `[Content_Types].xml` (Override,
+   `/ppt/slides/slideN.xml`), `presentation.xml.rels` (new rId), `sldIdLst`
+   (fully-qualified `r:id` namespace).
 
-## 3. Phase 2 — Flight Test Program Progress (screenshot → native tables)
+## 5. Phase 4 — QA
 
-The source slide 5 is screenshots. Extract data + colors, then rebuild 4 native bilingual tables.
-
-### 3a. Locate the screenshots
-
-```bash
-python3 - <<'EOF'
-from pptx import Presentation
-from pptx.util import Emu
-prs = Presentation("src.pptx"); s5 = prs.slides[4]
-for sh in s5.shapes:
-    print(sh.shape_type, sh.name, f"x={Emu(sh.left).inches:.2f} y={Emu(sh.top).inches:.2f} w={Emu(sh.width).inches:.2f} h={Emu(sh.height).inches:.2f}")
-EOF
-```
-Typical CW layout: left = Weekly Overview + Block/Flight (one tall screenshot), middle = Flight Hours & Flights, right = Progress Summary. Check `ppt/slides/_rels/slide5.xml.rels` to map pictures→media files.
-
-### 3b. OCR the table data
-
-Use the helper scripts (`cell_ocr.py`, `grid_detect.py`, `ascii_view.py` — kept in the previous week's `_cw<NN>_work/`):
+Structural:
 
 ```bash
-# 1. detect grid lines (returns row/col midpoints per image)
-python3 grid_detect.py ppt/media/<image>.png
-
-# 2. ASCII "view" of each screenshot to sanity-check structure
-python3 ascii_view.py ppt/media/<image>.png 110 40
-
-# 3. per-cell OCR: pass detected h/v lines as eval'd lists
-python3 cell_ocr.py ppt/media/<image>.png "[13,78,163,229,294,360]" "[6,254,465,677,904]"
-```
-- Upscale + binarize happens inside `cell_ocr.py`. If a cell OCRs empty, re-run it with a **wider box** or a different threshold — column separators are often 1–2px and land slightly off the detected line.
-- **Validate arithmetic**: flight hours/flights columns must be internally consistent (e.g. `500:00 − 326:31 = 173:29`, `326:31/500:00 ≈ 65%`, per-SN flight counts sum). If a number breaks the pattern, re-OCR it — it's usually a misread (e.g. `99` vs `55`).
-
-### 3c. Sample the fill colors
-
-```bash
-python3 - <<'EOF'
-from PIL import Image
-from collections import Counter
-def sample(img, box, label):
-    im = Image.open(img).convert('RGB'); c = Counter(im.crop(box).getdata()).most_common(1)[0]
-    print(f"{label}: #{c[0][0]:02X}{c[0][1]:02X}{c[0][2]:02X}")
-# sample an empty corner of each cell/row you care about
-sample('ppt/media/image10.png',(40,20,120,60),"overview hdr")
-EOF
-```
-Record each region's color (label column vs SN1003 column vs SN1004 column vs header rows) — the source wins over the template.
-
-### 3d. Build & run the rebuild script
-
-Copy the previous week's `rebuild_flight_test_progress_cw<NN>.py` (or `scripts/rebuild_flight_test_progress.py`), then edit the four data arrays + color constants to match **this week's source** (structure, merged cells, fills all from the source; font typeface/size and border weights from the template). Run:
-
-```bash
-python3 rebuild_flight_test_progress_cw<NN>.py phase1.pptx phase2.pptx
-```
-Verify: slide 5 has 4 tables, 0 pictures, and every cell matches the OCR'd data.
-
-**⚠️ Leftover decoration:** the source slide 5 often has a transparent "Oval 2" (a highlight circle over the screenshot). After the screenshot is replaced it's an orphan over the new table — remove that `<p:sp>` from `ppt/slides/slide5.xml` (edit the unpacked XML and repack, or patch the final zip).
-
-## 4. Phase 3 — insert template reference slide
-
-```bash
-python3 scripts/insert_template_slide.py phase2.pptx phase3.pptx
-# (uses the skill's references/template.pptx by default; pass a 3rd arg to override)
-```
-Result: 8 slides — 1 Cover, 2 TOC, 3 Highlights/Lowlights, 4 Status, 5 Flight Progress (data), 6 Flight Progress (template reference), 7–8 Short Term Plan (untouched).
-
-**⚠️ Check before running:** the script assumes slide rIds `slide1-5=rId5-9, slide6=rId10, slide7=rId11` and shifts 6→7, 7→8. Verify against the source:
-
-```bash
-grep -o 'Id="rId[0-9]*"[^>]*slide[0-9]*\.xml' ppt/_rels/presentation.xml.rels
-```
-If the mapping differs, adjust the hardcoded `rids` list / rel-renaming in the script.
-
-## 5. Phase 4 — QA (no renderer available)
-
-Run these checks; all passed for CW31:
-
-```bash
-python3 - <<'EOF'
+python - <<'EOF'
 import zipfile
 from lxml import etree
 from pptx import Presentation
 out = "weekly report cw <NN>_CH_EN.pptx"
 prs = Presentation(out)
-print("slides:", len(prs.slides))                       # = original + 1
-zf = zipfile.ZipFile(out)
-print("zip valid:", zf.testzip() is None)
+print("slides:", len(prs.slides))            # = original + split weeks (CW36: 8)
+zf = zipfile.ZipFile(out); print("zip ok:", zf.testzip() is None)
 for n in zf.namelist():
-    if n.endswith('.xml'): etree.fromstring(zf.read(n)) # well-formed
-print("slide5 tables:", sum(1 for s in prs.slides[4].shapes if s.has_table))  # 4
-print("slide5 pics:",   sum(1 for s in prs.slides[4].shapes if s.shape_type==13)) # 0
-print("slide7/8 pics:", sum(1 for s in prs.slides[6].shapes if s.shape_type==13),
-      sum(1 for s in prs.slides[7].shapes if s.shape_type==13)) # 2,2 (untouched)
+    if n.endswith('.xml'): etree.fromstring(zf.read(n))
+A='{http://schemas.openxmlformats.org/drawingml/2006/main}'
+bad = sum(1 for s in prs.slides for p in s._element.iter(A+'p')
+          for i,c in enumerate(p) if c.tag==A+'r' and any(x.tag==A+'endParaRPr' for x in p[i+1:]))
+print("runs after endParaRPr:", bad)          # must be 0
+# unedited slides byte-identical to input:
+def body(f,i): return etree.tostring(etree.fromstring(zipfile.ZipFile(f).read(f'ppt/slides/slide{i}.xml')))
+# ... compare appropriate indices ...
 EOF
 ```
 
-Additional structural checks:
-- **Untouched Short-Term Plan:** compare `out slide7/8` bodies to `src slide6/7` after stripping the `<?xml …?>` declaration — only the declaration quote style and trailing newline may differ (python-pptx re-serialization). Embeds and `../media/*.emf` targets must match.
-- **Template reference slide:** `out slide6` must equal `template.pptx slide5` (md5 the unpacked XML).
-- **Bilingual pairing:** every English bullet has a CN line; every CN has its EN (dump slide XML and check adjacency).
-- **No malformed nesting:** assert no `<a:r>` has a parent that is also `<a:r>` (the footer bug from Phase 1 would show up here).
+Visual render (Windows PowerPoint COM):
 
-Overflow: without a renderer, estimate per-shape (font size × text length vs box width/height) only as a sanity check; recommend a quick manual look in PowerPoint at slide 4 callout boxes and slide 5 tables.
+```powershell
+$pp = New-Object -ComObject PowerPoint.Application
+$pres = $pp.Presentations.Open((Resolve-Path 'out.pptx').Path, $true, $false, $false)
+$out = (Resolve-Path 'qa').Path
+for ($i = 1; $i -le $pres.Slides.Count; $i++) {
+  $pres.Slides.Item($i).Export((Join-Path $out ('slide-' + $i + '.png')), 'PNG', 1600, 900) }
+$pres.Close(); $pp.Quit()
+```
+
+Then run a judge pass on the rendered PNGs of every changed slide (bilingual
+pairing, colors vs source, no overflow over footer bars, banner kept on plan
+slides, table data cell-for-cell vs the EMF source).
+
+Row-height sanity: if a plan table collides with the footer bar, compress
+lnSpc to 95% and cell marT/B to 9000 before shrinking anything else.
 
 ## 6. Output naming & wrap-up
 
 ```bash
 cp phase3.pptx "weekly report cw <NN>_CH_EN.pptx"
 ```
-- Final output must be `<original_filename>_CH_EN.pptx` in the working directory.
-- **Keep** `_cw<NN>_work/` (CW scripts, OCR helpers `cell_ocr.py`/`grid_detect.py`/`ascii_view.py`, unpacked source/template, phase1–3 outputs) — the user wants these for next week.
-- Add any new terms to `../references/glossary.md` and update `../SKILL.md` if a convention changes.
+
+- Approved output: `<original>_CH_EN.pptx`. Experiments: `<original>_test.pptx`
+  — keep both, never overwrite the approved file with an experiment.
+- Keep `_cw<NN>_work/` (CW scripts, OCR helpers, unpacked source, phase
+  intermediates, `input_current.pptx` lock-copies) for next week.
+- Append new terms to `../references/glossary.md`; update the spec files if a
+  convention changes.

@@ -146,3 +146,23 @@ WOT numbers (WOT 532 etc.), percentages, aircraft SN/MSN, crew/LFTE codes in bra
 ## Style
 - Concise technical register; percentages/WOT numbers stay Latin; use （）full-width parentheses in Chinese; keep "/" as-is.
 - Chinese line = regular (non-bold), same color/size as its English line — handled by the apply script, don't encode formatting in the text.
+| 4th Seat Removal | 第4座椅拆除 |
+| Ballast Implementation (TBD) | 配重实施（待定） |
+| Aircraft Release | 飞机放行 |
+| Build up Crosswind Campaign | 侧风科目建立 |
+| Stall Speed Determination | 失速速度确定 |
+| FTE Rack Removal | FTE设备架拆除 |
+| Weighing | 称重 |
+| A/C Readiness | 飞机准备状态 |
+| Test Readiness Review | 测试就绪评审 |
+| Flight is cancelled for EASA Activity | 因EASA活动取消飞行 |
+| After flight balasts will be removed | 飞行后拆除配重 |
+| Select Activity | 选择活动 |
+| 4th Seat Installation | 第4座椅安装 |
+| Engine Cooling Bypass Removal | 发动机冷却旁通堵头拆除 |
+| Load Bank Removal | 负载箱拆除 |
+| Reserved for EASA Flight Readiness | 预留用于EASA飞行准备 |
+| Engine Run for Engine Cooling Bypass Removal | 发动机冷却旁通堵头拆除试车 |
+| Engine Starvation Test | 发动机断油测试 |
+| Pilot Briefing and A/C Training | 飞行员简报及A/C培训 |
+| Crosswind Campaign | 侧风科目 |
